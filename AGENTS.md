@@ -18,6 +18,34 @@ A job is attractive only when all of the following are favorable:
 - platform-compliant acquisition path
 - attractive revenue per unit of compute and human attention
 
+## Persistent job operating system — mandatory
+
+This repository is also the shared operational memory between Codex, the owner, and reviewers/ChatGPT.
+
+Follow `docs/JOB_STATE_PROTOCOL.md` for every real job/opportunity that becomes shortlisted, requires a decision, or enters execution.
+
+Mandatory rules:
+- each job gets its own permanent directory under `jobs/JOB-YYYYMMDD-NNN-short-slug/`
+- every job must maintain `STATE.md`, `BRIEF.md`, `TASKS.md`, `DECISIONS.md`, `ACTIVITY.md`, `REVIEW.md`, and `DELIVERY.md`
+- read `STATE.md` and `TASKS.md` before doing work on a job
+- update job state after every meaningful completed task, milestone, blocker, review, or decision request
+- append meaningful checkpoints to `ACTIVITY.md`
+- record material decisions in `DECISIONS.md`; do not silently overwrite decision history
+- update root `CONTROL_BOARD.md` whenever status, priority, blocker, review readiness, or human-attention requirement changes
+- commit checkpoints to GitHub so work is recoverable and externally reviewable
+- do not keep important progress only in model context, terminal output, local scratchpads, or an uncommitted working tree
+
+Required commit prefixes for operational checkpoints:
+- `checkpoint(<job_id>): ...`
+- `complete(<job_id>): ...`
+- `blocked(<job_id>): ...`
+- `review(<job_id>): ...`
+- `needs-decision(<job_id>): ...`
+
+Whenever human input is required, write a decision-ready request containing the recommendation, alternatives, tradeoffs, and exact next action after approval. Set the corresponding `REQUIRES_*` state, update `CONTROL_BOARD.md`, commit it, and stop only the gated action.
+
+Initial work-in-progress limit: at most **3 jobs in `IN_PROGRESS`** unless explicitly overridden. Paid/won work normally outranks speculative work.
+
 ## Agent structure
 
 Spawn subagents when parallel work materially improves speed or quality. Do not spawn agents for trivial work.
@@ -59,6 +87,7 @@ Responsibilities:
 - track open questions
 - identify scope creep
 - halt work on material scope changes until approved
+- keep the job workspace and `CONTROL_BOARD.md` synchronized
 
 ### 5. Builder Agent
 Responsibilities:
@@ -66,6 +95,7 @@ Responsibilities:
 - prefer small, testable changes
 - use repo conventions
 - document material assumptions
+- persist meaningful completion checkpoints before switching jobs
 
 ### 6. QA Agent
 Responsibilities:
@@ -73,11 +103,12 @@ Responsibilities:
 - run tests
 - inspect security/privacy risks
 - test edge cases
+- write findings and verdict to the job's `REVIEW.md`
 - reject incomplete delivery packages
 
 ### 7. Delivery Agent
 Responsibilities:
-- prepare concise delivery notes
+- prepare concise delivery notes in `DELIVERY.md`
 - list files/changes
 - provide setup/run/test instructions
 - summarize limitations
@@ -115,6 +146,8 @@ The system must pause and mark `REQUIRES_APPROVAL` before:
 6. spending money or purchasing platform credits/services
 7. making an external account change with financial or reputational consequences
 
+For each gate, also follow the persistent state procedure in `docs/JOB_STATE_PROTOCOL.md` so the pending decision is visible in GitHub.
+
 ## Platform compliance
 
 - Respect robots rules, platform Terms of Service, API terms, and rate limits.
@@ -143,6 +176,7 @@ A job may only enter `READY_FOR_DELIVERY` if:
 - limitations are disclosed
 - security-impacting changes received QA review
 - no unresolved blocker remains
+- `REVIEW.md` maps acceptance criteria to evidence and contains an independent verdict
 
 ## Job selection bias
 
@@ -177,6 +211,7 @@ Avoid or heavily penalize:
 - Track token/model usage when available.
 - Record human minutes spent per opportunity/job.
 - Reuse templates, utilities, tests, and components when licensing/IP permits.
+- Respect WIP limits; finishing/reviewing active paid jobs beats opening too many new workstreams.
 
 ## Continuous learning
 
@@ -209,6 +244,8 @@ The MVP must support:
 - proposal draft generation interface
 - approval state machine
 - won-job workspace
+- persistent per-job GitHub state/checkpoint protocol
+- root multi-job control board
 - acceptance criteria checklist
 - delivery checklist
 - experiment analytics
