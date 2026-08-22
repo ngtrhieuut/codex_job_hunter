@@ -47,7 +47,7 @@ This checkpoint addresses the manager review blockers on PR #2: PostgreSQL wirin
 | `pnpm format:check` | PASS |
 | `pnpm lint` | PASS |
 | `pnpm typecheck` | PASS |
-| `pnpm test` | PASS — 25 passed, 1 PostgreSQL live test skipped because `DATABASE_URL` is not configured |
+| `pnpm test` | PASS — 25 passed, 2 conditional PostgreSQL tests skipped because `DATABASE_URL` is not configured |
 | `pnpm build` | PASS — Next.js 15.5.21 with explicit local JSON override |
 | `pnpm db:migrate` without `DATABASE_URL` | PASS — safe local-mode message; no remote mutation |
 | `pnpm db:seed` | PASS — 100 imported, 7 scored, 3 hard rejected, 90 duplicates; temp JSON state only |
@@ -62,7 +62,7 @@ The restart suite covers:
 4. QA evidence and review state after restart;
 5. delivery/economic outcome persistence after restart.
 
-The checkpoint suite covers all seven required files, nested artifacts, configurable local-to-repository paths, one Git Data API commit, and failure when a required file is missing. A conditional live PostgreSQL round-trip test runs automatically when `DATABASE_URL` is available and migrations have been applied.
+The checkpoint suite covers all seven required files, nested artifacts, configurable local-to-repository paths, one Git Data API commit, and failure when a required file is missing. A conditional live PostgreSQL round-trip test runs automatically when `DATABASE_URL` is available and migrations have been applied. `tests/integration/postgres-live-lifecycle.test.ts` extends this with a full opportunity → shortlist → Apply Gate → manual application → won → price/contract gates → job → QA → delivery gate → restart/readback → accepted → paid lifecycle.
 
 ## Source-of-truth and recovery model
 
@@ -79,7 +79,7 @@ PostgreSQL/Neon is authoritative for transactional runtime state and queries. Gi
 
 ## Known limitations
 
-1. This runtime has no `DATABASE_URL`, so the live PostgreSQL round-trip is present but skipped here. The migration runner and production selection are fail-fast; deployment must apply all files in `db/migrations/` before starting.
+1. Live Neon/PostgreSQL validation is not yet complete. This runtime has no `DATABASE_URL`, and Neon MCP currently exposes only the unrelated `phudong-class-management` project, so the migration runner and live lifecycle test remain skipped. Do not use that project as a substitute. The migration runner and production selection are fail-fast; deployment must apply all files in `db/migrations/` to the intended database before starting.
 2. GitHub checkpointing creates blobs/tree/commit objects before the final ref update. A failed ref update can leave orphan Git objects, but cannot create a partial logical checkpoint in the branch.
 3. The reconciliation endpoint is owner-gated for writes, but the single-owner token/cookie mechanism is not a multi-user identity system.
 4. GitHub issue compensation is evidence/uncertainty only; the adapter cannot prove that an issue is paid.
@@ -88,7 +88,7 @@ PostgreSQL/Neon is authoritative for transactional runtime state and queries. Gi
 
 ## Readiness for the first controlled experiment
 
-The MVP is ready for manager re-review and a small, human-controlled experiment after the owner configures PostgreSQL/Neon and GitHub checkpoint credentials. The first target remains one legitimate accepted paid job / first $100, not application volume.
+The MVP is ready for manager re-review and a small, human-controlled experiment after the owner configures the intended PostgreSQL/Neon database and GitHub checkpoint credentials, and the live lifecycle/restart evidence passes. The first target remains one legitimate accepted paid job / first $100, not application volume.
 
 Recommended loop:
 

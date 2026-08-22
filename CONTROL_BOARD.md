@@ -6,18 +6,20 @@ This is the operational index for all jobs. PostgreSQL/Neon is the transactional
 
 ## SYSTEM CHECKPOINT
 
-- Phase 0 + Phase 1 MVP implemented and verified on 2026-08-22.
+- Phase 0 + Phase 1 MVP implemented; local/CI verification passed on 2026-08-22, while live Neon/PostgreSQL deployment validation remains blocked below.
 - Baseline has no real managed jobs, pending human decisions, active client work, or payment records.
 - `APP_STORE=json` is an explicit development/test fallback only. Local demo data is generated with `pnpm db:seed` into ignored `.data/`; it is not the production runtime or GitHub operational ledger.
 - Production requires `APP_STORE=postgres`, `DATABASE_URL`, `GITHUB_TOKEN`, and `GITHUB_REPOSITORY`; missing durable-runtime configuration fails fast.
 - Each checkpoint carries the seven required job files, relevant artifacts, and this board through one Git Data API commit.
-- Next controlled experiment: select one legitimate, well-scoped opportunity and prove the human-gated discovery → QA → delivery → payment loop.
+- Live Phase 0–1 deployment validation is **BLOCKED**: Neon MCP currently exposes only the unrelated `phudong-class-management` project, and this runtime has no `DATABASE_URL`. No migration or live PostgreSQL lifecycle test has run against the intended database.
+- Phase 2 / First $100 discovery is **READ_ONLY**. The dated scouting evidence is [docs/FIRST_100_SCOUT_2026-08-22.md](docs/FIRST_100_SCOUT_2026-08-22.md); no opportunity is persisted or shortlisted until the durable runtime and current availability are verified.
+- Next controlled experiment: after the database blocker is cleared, select one legitimate, well-scoped opportunity and prove the human-gated discovery → QA → delivery → payment loop.
 
 ## HUMAN ACTION REQUIRED
 
 | Priority | Job | Decision needed | Recommendation | Since | Link |
 |---|---|---|---|---|---|
-| — | — | No pending human decisions | — | — | — |
+| P0 | SYSTEM-NEON | Provide the intended `DATABASE_URL`/Neon project, or explicitly approve provisioning a dedicated project | Do not use `phudong-class-management`; after configuration run migrations, live PostgreSQL lifecycle/restart tests, and reconciliation | 2026-08-22 | [live validation note](docs/FIRST_100_SCOUT_2026-08-22.md#persistence-and-next-action) |
 
 ## ACTIVE WORK
 
@@ -35,7 +37,7 @@ This is the operational index for all jobs. PostgreSQL/Neon is the transactional
 
 | Priority | Job | Status | Blocker | Waiting on | Age | Updated |
 |---|---|---|---|---|---|---|
-| — | — | No blocked jobs | — | — | — | — |
+| P0 | SYSTEM-NEON | `BLOCKED_INTERNAL` | Correct Neon target and `DATABASE_URL` are unavailable; live migration/durability evidence cannot be produced safely | Hieu | 0 days | 2026-08-22 |
 
 ## PIPELINE / SHORTLIST
 

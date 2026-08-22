@@ -643,8 +643,14 @@ export function getStore(): AppStore {
 
 export function resetStoreForTests(): void {
   const current = singleton as (AppStore & { close?: () => Promise<void> }) | null;
-  if (current?.close) void current.close();
   singleton = null;
+  if (current?.close) void current.close();
+}
+
+export async function resetStoreForTestsAsync(): Promise<void> {
+  const current = singleton as (AppStore & { close?: () => Promise<void> }) | null;
+  singleton = null;
+  if (current?.close) await current.close();
 }
 
 export function isKnownJobStatus(status: string): status is JobStatus {
