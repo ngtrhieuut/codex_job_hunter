@@ -53,8 +53,9 @@ Validated evidence on 2026-08-22:
 
 - Neon schema contains the 20 application tables, including opportunities, scores, proposals, approvals, applications, jobs, QA, delivery, economics, transitions, activities, decisions, settings, and reconciliation conflicts.
 - Full `pnpm test` with `APP_STORE=postgres` and this `DATABASE_URL`: **8 test files and 27 tests passed**.
-- The full lifecycle test passed through opportunity → shortlist → Apply Gate → manual application → won → price/contract gates → job → QA → delivery gate → restart/readback → accepted → paid. It completed in approximately 231 seconds in the full suite because the Neon compute/pooler path has cold-start and round-trip latency.
-- Post-test database verification: `opportunities=0`, `jobs=0`, `applications=0`, `approvals=0`, and no open reconciliation conflicts. Test fixtures were removed by the test cleanup.
+- The full lifecycle test passed through opportunity → shortlist → Apply Gate → manual application → won → price/contract gates → job → QA → delivery gate → restart/readback → accepted → paid. It completed in approximately 186–231 seconds in the full suite because the Neon compute/pooler path has cold-start and round-trip latency.
+- Test-fixture cleanup was verified after the Phase 2 run: `opportunities=13`, `opportunity_scores=10`, `jobs=0`, `applications=0`, `approvals=0`, `reconciliation_conflicts=0`, and suspicious PostgreSQL fixture rows `=0`. The 13 opportunities are the dated read-only scout records documented in [docs/FIRST_100_SCOUT_2026-08-22.md](FIRST_100_SCOUT_2026-08-22.md).
+- JSONB persistence was corrected and verified: object/array fields are stored with typed `postgres.json(...)` parameters, so `raw_metadata` and score/list columns remain queryable JSONB rather than text-encoded JSON scalars.
 
 The default JSON-mode CI remains useful for fast offline validation. It intentionally skips live PostgreSQL tests when `DATABASE_URL` is absent; that is not evidence that production persistence is unavailable.
 
