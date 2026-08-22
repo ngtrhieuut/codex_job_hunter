@@ -4,6 +4,13 @@ This is the operational index for all jobs. Codex must keep it current whenever 
 
 > Source of detail: each `jobs/<JOB-ID>/STATE.md`. This board is a summary, not a replacement for per-job state.
 
+## SYSTEM CHECKPOINT
+
+- Phase 0 + Phase 1 MVP implemented and verified on 2026-08-22.
+- Baseline has no real managed jobs, pending human decisions, active client work, or payment records.
+- Local demo data is generated with `pnpm db:seed` into ignored `.data/`; it is not committed operational state.
+- Next controlled experiment: select one legitimate, well-scoped opportunity and prove the human-gated discovery → QA → delivery → payment loop.
+
 ## HUMAN ACTION REQUIRED
 
 | Priority | Job | Decision needed | Recommendation | Since | Link |

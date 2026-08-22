@@ -1,0 +1,21 @@
+import { randomUUID } from 'node:crypto';
+
+export function newId(): string {
+  return randomUUID();
+}
+
+export function nowIso(): string {
+  return new Date().toISOString();
+}
+
+export function slugify(value: string): string {
+  return (
+    value
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 48) || 'job'
+  );
+}

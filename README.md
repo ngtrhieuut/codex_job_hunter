@@ -108,3 +108,42 @@ The goal is not scale. The goal is to prove one complete closed loop:
 `AI-discovered opportunity -> human-approved action -> AI-assisted execution -> accepted deliverable -> payment`
 
 Target: first $100 in attributable revenue without violating marketplace or platform rules.
+
+## Phase 0 + Phase 1 MVP
+
+The repository now contains a runnable single-owner MVP for opportunity intelligence and multi-job operations.
+
+### Local setup
+
+Prerequisites: Node.js 20+ and pnpm 10+.
+
+```powershell
+pnpm install
+Copy-Item .env.example .env
+pnpm db:migrate       # applies PostgreSQL schema only when DATABASE_URL is configured
+pnpm db:seed          # optional: 100-row local demo fixture
+pnpm dev
+```
+
+Open `http://localhost:3000`. Without a database credential, the app uses the durable ignored file `.data/store.json`; this keeps the MVP usable locally. Set `APP_OWNER_TOKEN` before exposing it beyond a private local server. Set `GITHUB_TOKEN` only through environment configuration when higher-rate public discovery or GitHub checkpoint sync is needed.
+
+### Implemented workflow
+
+Manual entry and CSV/JSON import pass through validation, normalization, deduplication, hard filters, and deterministic `score_v1`. The inbox supports ranked sorting/filtering and detail pages explain score components, risks, assumptions, missing information, economic estimates, and truthful proposal drafts. The GitHub provider reads public issues only and performs no comments, PRs, applications, or client messaging.
+
+Shortlisting creates an isolated `jobs/JOB-YYYYMMDD-NNN-short-slug/` workspace from `jobs/_template/`. Apply, price, contract, scope, delivery, spending, and external account actions create persistent human-gated approvals. `STATE.md`, `ACTIVITY.md`, `DECISIONS.md`, and `CONTROL_BOARD.md` are refreshed at meaningful checkpoints; optional GitHub Contents sync can persist these files remotely.
+
+### Verification and architecture notes
+
+Run the complete local gate with:
+
+```powershell
+pnpm format:check
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+pnpm audit --prod
+```
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for boundaries and deliberate local-first deviations, and [docs/PHASE_0_1_CHECKPOINT.md](docs/PHASE_0_1_CHECKPOINT.md) for the implementation evidence, limitations, current state, and first-experiment protocol.
