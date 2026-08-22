@@ -241,5 +241,6 @@ describe('PostgresAppStore deterministic mapping', () => {
         await sql.end({ timeout: 5 });
       }
     },
+    30_000,
   );
 });

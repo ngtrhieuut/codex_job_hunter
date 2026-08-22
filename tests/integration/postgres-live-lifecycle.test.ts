@@ -164,5 +164,5 @@ describe.skipIf(!hasDatabase)('live PostgreSQL lifecycle durability', () => {
       });
       await sql.end({ timeout: 5 });
     }
-  });
+  }, 300_000);
 });
