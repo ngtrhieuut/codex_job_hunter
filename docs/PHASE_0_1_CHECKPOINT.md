@@ -21,6 +21,7 @@ This checkpoint addresses the manager review blockers on PR #2: PostgreSQL wirin
 - Next.js App Router + TypeScript single-owner internal application scaffold.
 - PostgreSQL/Neon migrations for opportunities, immutable score snapshots, proposals, approvals, applications, jobs, criteria, tasks, QA, delivery, economics, transitions, settings, decision/activity ledgers, and reconciliation conflicts.
 - `PostgresAppStore` with parameterized SQL, transactional state mutations, complete `AppState` reconstruction, and JSON-compatible row mappers.
+- PostgreSQL JSONB writes use typed `postgres.json(...)` parameters; object/array shape is verified directly with `jsonb_typeof` and metadata operators in the live round-trip test.
 - Explicit `APP_STORE=json|postgres` selection in `src/lib/store.ts`; production PostgreSQL mode requires `DATABASE_URL`, `GITHUB_TOKEN`, and `GITHUB_REPOSITORY`.
 - Local JSON store with atomic file replacement and serialized writes for offline development/tests.
 - Manual entry and validated CSV/JSON import with row/path errors.
@@ -49,6 +50,7 @@ This checkpoint addresses the manager review blockers on PR #2: PostgreSQL wirin
 | `pnpm typecheck` | PASS |
 | `pnpm test` (local JSON/CI mode) | PASS — 25 passed, 2 conditional PostgreSQL tests skipped because `DATABASE_URL` is not configured |
 | `pnpm test` (`APP_STORE=postgres` against dedicated Neon) | PASS — 27 tests passed; full lifecycle completed in approximately 231 seconds |
+| Live JSONB shape regression (`postgres-store.test.ts`) | PASS — raw metadata/object and technology/list fields are stored as queryable JSONB object/arrays, not text-encoded JSON scalars |
 | `pnpm build` | PASS — Next.js 15.5.21 with explicit local JSON override |
 | `pnpm db:migrate` against dedicated Neon | PASS — both migrations applied; rerun is idempotent with expected PostgreSQL skip notices |
 | `pnpm db:migrate` without `DATABASE_URL` | PASS — safe local-mode message; no remote mutation |
@@ -78,10 +80,11 @@ PostgreSQL/Neon is authoritative for transactional runtime state and queries. Gi
 - No external proposal, application, client message, contract acceptance, spend, or account change was performed.
 - `CONTROL_BOARD.md` intentionally has no managed jobs or pending human decisions in the committed baseline.
 - `pnpm db:seed` is available for a local demo; its `.data/` state is ignored and must not be treated as the GitHub operational ledger.
+- Phase 2 read-only scouting is now persisted in the dedicated Neon project; see [docs/FIRST_100_SCOUT_2026-08-22.md](FIRST_100_SCOUT_2026-08-22.md) for the 13-record evidence set and current no-shortlist decision.
 
 ## Known limitations
 
-1. Live Neon/PostgreSQL validation passed against the dedicated `codex-job-hunter` project on 2026-08-22. The full lifecycle test takes approximately 231 seconds on the pooled Neon connection because of compute cold-start and repeated checkpoint round-trips; its explicit timeout is 300 seconds. CI without `DATABASE_URL` still skips live tests by design.
+1. Live Neon/PostgreSQL validation passed against the dedicated `codex-job-hunter` project on 2026-08-22. The full lifecycle test takes approximately 186–231 seconds on the pooled Neon connection because of compute cold-start and repeated checkpoint round-trips; its explicit timeout is 300 seconds. CI without `DATABASE_URL` still skips live tests by design.
 2. GitHub checkpointing creates blobs/tree/commit objects before the final ref update. A failed ref update can leave orphan Git objects, but cannot create a partial logical checkpoint in the branch.
 3. The reconciliation endpoint is owner-gated for writes, but the single-owner token/cookie mechanism is not a multi-user identity system.
 4. GitHub issue compensation is evidence/uncertainty only; the adapter cannot prove that an issue is paid.

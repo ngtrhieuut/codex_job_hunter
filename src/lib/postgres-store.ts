@@ -159,9 +159,8 @@ function parseJson<T>(value: unknown, fallback: T): T {
   }
 }
 
-function jsonParameter(value: unknown): string {
-  const serialized = JSON.stringify(value ?? null);
-  return serialized === undefined ? 'null' : serialized;
+function jsonParameter(client: Sql, value: unknown): ReturnType<Sql['json']> {
+  return client.json(value as Parameters<Sql['json']>[0]);
 }
 
 function clone<T>(value: T): T {
@@ -947,7 +946,7 @@ async function insertTransition(
     VALUES
       (${transition.id}, ${transition.entityType}, ${transition.entityId}, ${transition.fromState},
        ${transition.toState}, ${transition.actor}, ${transition.reason},
-       ${jsonParameter({})}::jsonb, ${transition.createdAt})
+      ${jsonParameter(client, {})}::jsonb, ${transition.createdAt})
   `;
 }
 
@@ -981,8 +980,8 @@ async function upsertScore(
        ${componentForScore(score, 'scam_risk')}, ${score.overallScore}, ${score.estimatedAiMinutes},
        ${score.estimatedHumanMinutes}, ${score.estimatedTokens}, ${score.winProbability},
        ${score.expectedNetRevenue}, ${score.expectedRevenuePer1mTokens},
-       ${jsonParameter(score.assumptions)}::jsonb, ${jsonParameter(score.riskFlags)}::jsonb,
-       ${jsonParameter(score.explanation)}::jsonb, ${score.createdAt})
+       ${jsonParameter(client, score.assumptions)}::jsonb, ${jsonParameter(client, score.riskFlags)}::jsonb,
+       ${jsonParameter(client, score.explanation)}::jsonb, ${score.createdAt})
     ON CONFLICT (id) DO UPDATE SET
       opportunity_id = EXCLUDED.opportunity_id,
       scoring_version = EXCLUDED.scoring_version,
@@ -1052,18 +1051,18 @@ async function insertOpportunity(
         original_description = ${opportunity.originalDescription},
         normalized_summary = ${opportunity.normalizedSummary},
         category = ${opportunity.category},
-        technologies = ${jsonParameter(opportunity.technologies)}::jsonb,
-        deliverables = ${jsonParameter(opportunity.deliverables)}::jsonb,
-        inferred_acceptance_criteria = ${jsonParameter(opportunity.inferredAcceptanceCriteria)}::jsonb,
-        missing_information = ${jsonParameter(opportunity.missingInformation)}::jsonb,
+        technologies = ${jsonParameter(client, opportunity.technologies)}::jsonb,
+        deliverables = ${jsonParameter(client, opportunity.deliverables)}::jsonb,
+        inferred_acceptance_criteria = ${jsonParameter(client, opportunity.inferredAcceptanceCriteria)}::jsonb,
+        missing_information = ${jsonParameter(client, opportunity.missingInformation)}::jsonb,
         budget_min = ${opportunity.budgetMin},
         budget_max = ${opportunity.budgetMax},
         currency = ${opportunity.currency},
         explicit_deadline = ${opportunity.explicitDeadline},
         discovered_at = ${opportunity.discoveredAt},
         posted_at = ${opportunity.postedAt},
-        raw_metadata = ${jsonParameter(opportunity.rawMetadata)}::jsonb,
-        normalized_record = ${jsonParameter(normalizedRecord)}::jsonb,
+        raw_metadata = ${jsonParameter(client, opportunity.rawMetadata)}::jsonb,
+        normalized_record = ${jsonParameter(client, normalizedRecord)}::jsonb,
         status = ${opportunity.status},
         hard_filter_reason = ${opportunity.hardFilterReason},
         duplicate_of = ${opportunity.duplicateOf},
@@ -1080,13 +1079,13 @@ async function insertOpportunity(
       VALUES
         (${opportunity.id}, ${opportunity.source}, ${opportunity.externalId}, ${opportunity.sourceUrl},
          ${opportunity.title}, ${opportunity.originalDescription}, ${opportunity.normalizedSummary},
-         ${opportunity.category}, ${jsonParameter(opportunity.technologies)}::jsonb,
-         ${jsonParameter(opportunity.deliverables)}::jsonb,
-         ${jsonParameter(opportunity.inferredAcceptanceCriteria)}::jsonb,
-         ${jsonParameter(opportunity.missingInformation)}::jsonb, ${opportunity.budgetMin},
+         ${opportunity.category}, ${jsonParameter(client, opportunity.technologies)}::jsonb,
+         ${jsonParameter(client, opportunity.deliverables)}::jsonb,
+         ${jsonParameter(client, opportunity.inferredAcceptanceCriteria)}::jsonb,
+         ${jsonParameter(client, opportunity.missingInformation)}::jsonb, ${opportunity.budgetMin},
          ${opportunity.budgetMax}, ${opportunity.currency}, ${opportunity.explicitDeadline},
-         ${opportunity.discoveredAt}, ${opportunity.postedAt}, ${jsonParameter(opportunity.rawMetadata)}::jsonb,
-         ${jsonParameter(normalizedRecord)}::jsonb,
+         ${opportunity.discoveredAt}, ${opportunity.postedAt}, ${jsonParameter(client, opportunity.rawMetadata)}::jsonb,
+         ${jsonParameter(client, normalizedRecord)}::jsonb,
          ${opportunity.status}, ${opportunity.hardFilterReason}, ${opportunity.duplicateOf},
          ${opportunity.createdAt}, ${nowIso()})
     `;
@@ -1125,15 +1124,15 @@ async function persistReview(client: Sql, review: ReviewRecord): Promise<void> {
     await client`
       UPDATE qa_runs SET
         job_id = ${review.jobId},
-        criteria_result = ${jsonParameter(review.criteriaResults)}::jsonb,
-        tests_result = ${jsonParameter(review.tests)}::jsonb,
-        security_result = ${jsonParameter(review.securityFindings)}::jsonb,
-        documentation_result = ${jsonParameter(documentation)}::jsonb,
+        criteria_result = ${jsonParameter(client, review.criteriaResults)}::jsonb,
+        tests_result = ${jsonParameter(client, review.tests)}::jsonb,
+        security_result = ${jsonParameter(client, review.securityFindings)}::jsonb,
+        documentation_result = ${jsonParameter(client, documentation)}::jsonb,
         verdict = ${review.verdict},
-        issues = ${jsonParameter([])}::jsonb,
+        issues = ${jsonParameter(client, [])}::jsonb,
         reviewer = ${review.reviewer},
-        findings = ${jsonParameter(review.findings)}::jsonb,
-        required_changes = ${jsonParameter(review.requiredChanges)}::jsonb,
+        findings = ${jsonParameter(client, review.findings)}::jsonb,
+        required_changes = ${jsonParameter(client, review.requiredChanges)}::jsonb,
         created_at = ${review.createdAt}
       WHERE id = ${review.id}
     `;
@@ -1150,11 +1149,11 @@ async function persistReview(client: Sql, review: ReviewRecord): Promise<void> {
       (id, job_id, run_number, criteria_result, tests_result, security_result,
        documentation_result, verdict, issues, created_at, reviewer, findings, required_changes)
     VALUES
-      (${review.id}, ${review.jobId}, ${runNumber}, ${jsonParameter(review.criteriaResults)}::jsonb,
-       ${jsonParameter(review.tests)}::jsonb, ${jsonParameter(review.securityFindings)}::jsonb,
-       ${jsonParameter(documentation)}::jsonb, ${review.verdict}, ${jsonParameter([])}::jsonb,
-       ${review.createdAt}, ${review.reviewer}, ${jsonParameter(review.findings)}::jsonb,
-       ${jsonParameter(review.requiredChanges)}::jsonb)
+      (${review.id}, ${review.jobId}, ${runNumber}, ${jsonParameter(client, review.criteriaResults)}::jsonb,
+       ${jsonParameter(client, review.tests)}::jsonb, ${jsonParameter(client, review.securityFindings)}::jsonb,
+       ${jsonParameter(client, documentation)}::jsonb, ${review.verdict}, ${jsonParameter(client, [])}::jsonb,
+       ${review.createdAt}, ${review.reviewer}, ${jsonParameter(client, review.findings)}::jsonb,
+       ${jsonParameter(client, review.requiredChanges)}::jsonb)
   `;
 }
 
@@ -1207,8 +1206,8 @@ async function persistJobChildren(client: Sql, job: JobRecord): Promise<void> {
          delivery_message_draft, final_approval_status, status, created_at, delivered_at)
       VALUES
         (${delivery.id}, ${delivery.jobId}, ${delivery.version}, ${delivery.summary},
-         ${delivery.instructions}, ${jsonParameter(delivery.testsPerformed)}::jsonb,
-         ${jsonParameter(delivery.limitations)}::jsonb, ${jsonParameter(delivery.artifacts)}::jsonb,
+         ${delivery.instructions}, ${jsonParameter(client, delivery.testsPerformed)}::jsonb,
+         ${jsonParameter(client, delivery.limitations)}::jsonb, ${jsonParameter(client, delivery.artifacts)}::jsonb,
          ${delivery.deliveryMessageDraft}, ${delivery.finalApprovalStatus}, ${delivery.status},
          ${delivery.createdAt}, ${delivery.deliveredAt})
       ON CONFLICT (job_id, version) DO UPDATE SET
@@ -1227,7 +1226,7 @@ async function persistJobChildren(client: Sql, job: JobRecord): Promise<void> {
 }
 
 async function persistJobBase(client: Sql, job: JobRecord, insert: boolean): Promise<void> {
-  const scope = jsonParameter(serializeJobStorage(job));
+  const scope = jsonParameter(client, serializeJobStorage(job));
   if (insert) {
     await client`
       INSERT INTO jobs
@@ -1241,7 +1240,7 @@ async function persistJobBase(client: Sql, job: JobRecord, insert: boolean): Pro
          ${job.startedAt}, ${job.completedAt}, ${job.createdAt}, ${job.updatedAt}, ${job.priority},
          ${job.score}, ${job.estimatedValueUsd}, ${job.actualRevenueUsd}, ${job.risk},
          ${job.nextAction}, ${job.nextActionOwner}, ${job.humanGate},
-         ${jsonParameter(job.blockedBy)}::jsonb, ${job.branchOrPr}, ${job.lastCheckpointCommit})
+         ${jsonParameter(client, job.blockedBy)}::jsonb, ${job.branchOrPr}, ${job.lastCheckpointCommit})
     `;
   } else {
     await client`
@@ -1265,7 +1264,7 @@ async function persistJobBase(client: Sql, job: JobRecord, insert: boolean): Pro
         next_action = ${job.nextAction},
         next_action_owner = ${job.nextActionOwner},
         human_gate = ${job.humanGate},
-        blocked_by = ${jsonParameter(job.blockedBy)}::jsonb,
+        blocked_by = ${jsonParameter(client, job.blockedBy)}::jsonb,
         branch_or_pr = ${job.branchOrPr},
         last_checkpoint_commit = ${job.lastCheckpointCommit}
       WHERE id = ${job.id}
@@ -1474,7 +1473,7 @@ export class PostgresAppStore implements AppStore {
         (next as AppSettings)[key] = clone(value) as never;
         await tx`
           INSERT INTO system_settings (key, value, updated_at)
-          VALUES (${SETTING_DB_KEYS[key]}, ${jsonParameter(value)}::jsonb, ${nowIso()})
+          VALUES (${SETTING_DB_KEYS[key]}, ${jsonParameter(tx, value)}::jsonb, ${nowIso()})
           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = EXCLUDED.updated_at
         `;
       }
@@ -1591,10 +1590,10 @@ export class PostgresAppStore implements AppStore {
       VALUES
         (${proposal.id}, ${proposal.opportunityId}, ${proposal.version}, ${proposal.opening},
          ${proposal.requirementInterpretation}, ${proposal.implementationPlan},
-         ${jsonParameter(proposal.proofPoints)}::jsonb, ${jsonParameter(proposal.assumptions)}::jsonb,
-         ${jsonParameter(proposal.questions)}::jsonb, ${proposal.recommendedBid}, ${proposal.minimumBid},
+         ${jsonParameter(this.sql, proposal.proofPoints)}::jsonb, ${jsonParameter(this.sql, proposal.assumptions)}::jsonb,
+         ${jsonParameter(this.sql, proposal.questions)}::jsonb, ${proposal.recommendedBid}, ${proposal.minimumBid},
          ${proposal.currency}, ${proposal.timelineRecommendation},
-         ${jsonParameter(proposal.scopeIncluded)}::jsonb, ${jsonParameter(proposal.scopeExcluded)}::jsonb,
+         ${jsonParameter(this.sql, proposal.scopeIncluded)}::jsonb, ${jsonParameter(this.sql, proposal.scopeExcluded)}::jsonb,
          ${proposal.body}, ${proposal.status}, ${proposal.createdAt}, ${proposal.updatedAt})
       ON CONFLICT (id) DO UPDATE SET
         opportunity_id = EXCLUDED.opportunity_id,
@@ -1653,7 +1652,7 @@ export class PostgresAppStore implements AppStore {
            decision_note, requested_at, decided_at, decision_id)
         VALUES
           (${result.id}, ${result.opportunityId}, ${result.jobId}, ${result.approvalType},
-           ${jsonParameter(result.requestedPayload)}::jsonb, ${result.decision},
+           ${jsonParameter(tx, result.requestedPayload)}::jsonb, ${result.decision},
            ${result.decisionNote}, ${result.requestedAt}, ${result.decidedAt}, NULL)
       `;
       const payload = result.requestedPayload || {};
@@ -1669,6 +1668,7 @@ export class PostgresAppStore implements AppStore {
              'Review the evidence, risks, scope and commercial consequences before deciding.',
            )},
            ${jsonParameter(
+             tx,
              Array.isArray(payload.alternatives)
                ? payload.alternatives.map(String)
                : ['Approve', 'Reject'],
@@ -1846,7 +1846,7 @@ export class PostgresAppStore implements AppStore {
       const job = jobs[0];
       await tx`
         UPDATE jobs
-        SET agreed_scope = ${jsonParameter(serializeJobStorage({ ...job, latestReview: review }))}::jsonb
+        SET agreed_scope = ${jsonParameter(tx, serializeJobStorage({ ...job, latestReview: review }))}::jsonb
         WHERE id = ${review.jobId}
       `;
       return clone(review);
@@ -1863,8 +1863,8 @@ export class PostgresAppStore implements AppStore {
            delivery_message_draft, final_approval_status, status, created_at, delivered_at)
         VALUES
           (${delivery.id}, ${delivery.jobId}, ${delivery.version}, ${delivery.summary},
-           ${delivery.instructions}, ${jsonParameter(delivery.testsPerformed)}::jsonb,
-           ${jsonParameter(delivery.limitations)}::jsonb, ${jsonParameter(delivery.artifacts)}::jsonb,
+           ${delivery.instructions}, ${jsonParameter(tx, delivery.testsPerformed)}::jsonb,
+           ${jsonParameter(tx, delivery.limitations)}::jsonb, ${jsonParameter(tx, delivery.artifacts)}::jsonb,
            ${delivery.deliveryMessageDraft}, ${delivery.finalApprovalStatus}, ${delivery.status},
            ${delivery.createdAt}, ${delivery.deliveredAt})
         ON CONFLICT (job_id, version) DO UPDATE SET
@@ -1881,7 +1881,7 @@ export class PostgresAppStore implements AppStore {
       `;
       await tx`
         UPDATE jobs
-        SET agreed_scope = ${jsonParameter(serializeJobStorage({ ...jobs[0], delivery }))}::jsonb
+        SET agreed_scope = ${jsonParameter(tx, serializeJobStorage({ ...jobs[0], delivery }))}::jsonb
         WHERE id = ${delivery.jobId}
       `;
       return clone(delivery);
@@ -1909,6 +1909,7 @@ export class PostgresAppStore implements AppStore {
         UPDATE jobs
         SET actual_revenue_usd = ${outcome.grossRevenue}, updated_at = ${updatedAt},
             agreed_scope = ${jsonParameter(
+              tx,
               serializeJobStorage({
                 ...jobs[0],
                 actualRevenueUsd: outcome.grossRevenue,

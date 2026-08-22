@@ -236,6 +236,18 @@ describe('PostgresAppStore deterministic mapping', () => {
         const restored = await store.getOpportunity(opportunityId);
         expect(restored?.latestScore?.id).toBe(score.id);
         expect(restored?.scoreHistory.map((item) => item.id)).toContain(score.id);
+        expect(restored?.rawMetadata).toEqual({ test: true });
+        const jsonShape = await sql`
+          SELECT
+            jsonb_typeof(raw_metadata) AS metadata_type,
+            raw_metadata->>'test' AS metadata_test,
+            jsonb_typeof(technologies) AS technologies_type
+          FROM opportunities
+          WHERE id = ${opportunityId}
+        `;
+        expect(jsonShape[0]?.metadata_type).toBe('object');
+        expect(jsonShape[0]?.metadata_test).toBe('true');
+        expect(jsonShape[0]?.technologies_type).toBe('array');
       } finally {
         await sql`DELETE FROM opportunities WHERE id = ${opportunityId}`;
         await sql.end({ timeout: 5 });

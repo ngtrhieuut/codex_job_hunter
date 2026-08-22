@@ -12,8 +12,9 @@ This is the operational index for all jobs. PostgreSQL/Neon is the transactional
 - Production requires `APP_STORE=postgres`, `DATABASE_URL`, `GITHUB_TOKEN`, and `GITHUB_REPOSITORY`; missing durable-runtime configuration fails fast.
 - Each checkpoint carries the seven required job files, relevant artifacts, and this board through one Git Data API commit.
 - Dedicated Neon runtime: project `codex-job-hunter` (`sweet-frog-85939680`), default branch `main` (`br-withered-resonance-afwcaan8`), database `neondb`; see [docs/NEON_OPERATIONS.md](docs/NEON_OPERATIONS.md).
-- Phase 2 / First $100 discovery is **IN_PROGRESS_READ_ONLY**. The dated scouting evidence is [docs/FIRST_100_SCOUT_2026-08-22.md](docs/FIRST_100_SCOUT_2026-08-22.md); no candidate is shortlisted until current availability and scope pass review.
-- Next controlled experiment: persist fresh opportunities to Neon, select one legitimate well-scoped candidate, and prove the human-gated discovery → QA → delivery → payment loop.
+- Phase 2 / First $100 discovery is **IN_PROGRESS_READ_ONLY / PERSISTED_NEON**. The dated scouting evidence is [docs/FIRST_100_SCOUT_2026-08-22.md](docs/FIRST_100_SCOUT_2026-08-22.md): 13 unique public records persisted to Neon, 10 operationally cancelled, 3 deterministic hard rejects, and no shortlist.
+- The only currently-open small watchlist item is Freelancer project `39701031` ([WordPress Site Content Update](https://www.freelancer.com/projects/payment-gateway-integration/wordpress-site-content-update)); its visible `$15–25/hour` range fails the current `$50` hard-filter floor because total scope is unknown. It is not a managed job and has no Apply Gate.
+- Next controlled experiment: continue read-only discovery for a fresh legitimate well-scoped candidate, then prove the human-gated discovery → QA → delivery → payment loop only after the candidate clears current availability, scope, and commercial-evidence checks.
 
 ## HUMAN ACTION REQUIRED
 
@@ -44,6 +45,8 @@ This is the operational index for all jobs. PostgreSQL/Neon is the transactional
 | Rank | Job | Status | Score | Est. value | Completion probability | Risk | Recommended action |
 |---:|---|---|---:|---:|---:|---|---|
 | — | — | No shortlisted jobs | — | — | — | — | — |
+
+Current watchlist is audit-only: Freelancer `39701031` remains `REJECTED_HARD_FILTER` pending exact page count, total scope, access, and payment verification. No job workspace exists and no external action is authorized.
 
 ## RECENTLY COMPLETED
 
