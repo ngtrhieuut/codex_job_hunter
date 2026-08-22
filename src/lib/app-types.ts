@@ -112,6 +112,7 @@ export interface OpportunityRecord {
   createdAt: string;
   updatedAt: string;
   latestScore: ScoreSnapshot | null;
+  scoreHistory: ScoreSnapshot[];
 }
 
 export interface ProposalRecord {
@@ -146,6 +147,22 @@ export interface ApprovalRecord {
   decisionNote: string | null;
   requestedAt: string;
   decidedAt: string | null;
+  decisionId?: string | null;
+}
+
+export interface ApplicationRecord {
+  id: string;
+  opportunityId: string;
+  proposalId: string | null;
+  submittedAt: string | null;
+  submittedVia: 'MANUAL' | 'OFFICIAL_API' | 'OTHER_PERMITTED';
+  actualBid: number | null;
+  currency: string | null;
+  status: 'PREPARED' | 'SUBMITTED' | 'LOST' | 'WON' | 'WITHDRAWN';
+  externalReference: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface JobRecord {
@@ -176,6 +193,8 @@ export interface JobRecord {
   acceptanceCriteria: AcceptanceCriterion[];
   tasks: JobTask[];
   latestReview: ReviewRecord | null;
+  delivery: DeliveryRecord | null;
+  economicOutcome: EconomicOutcomeRecord | null;
 }
 
 export interface AcceptanceCriterion {
@@ -205,7 +224,85 @@ export interface ReviewRecord {
   criteriaResults: Array<{ criterion: string; result: string; evidence: string }>;
   tests: string[];
   securityFindings: string[];
+  reviewer: string;
+  findings: string[];
+  requiredChanges: string[];
   createdAt: string;
+}
+
+export interface DeliveryRecord {
+  id: string;
+  jobId: string;
+  version: number;
+  summary: string;
+  instructions: string;
+  testsPerformed: string[];
+  limitations: string[];
+  artifacts: string[];
+  deliveryMessageDraft: string;
+  finalApprovalStatus: 'PENDING' | 'APPROVED' | 'DELIVERED';
+  status: 'DRAFT' | 'APPROVED' | 'DELIVERED' | 'SUPERSEDED';
+  createdAt: string;
+  deliveredAt: string | null;
+}
+
+export interface EconomicOutcomeRecord {
+  id: string;
+  jobId: string;
+  grossRevenue: number;
+  platformFees: number;
+  externalCosts: number;
+  netRevenue: number;
+  tokenCount: number | null;
+  estimatedAiMinutes: number | null;
+  actualHumanMinutes: number | null;
+  revisionsCount: number;
+  paymentStatus: 'UNPAID' | 'PARTIAL' | 'PAID' | 'REFUNDED';
+  paidAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DecisionRecord {
+  id: string;
+  approvalId: string | null;
+  opportunityId: string | null;
+  jobId: string | null;
+  question: string;
+  recommendation: string;
+  alternatives: string[];
+  finalDecision: 'PENDING' | 'APPROVED' | 'REJECTED';
+  ownerDecisionNote: string | null;
+  decidedBy: 'PENDING' | 'OWNER' | 'CODEX';
+  requestedAt: string;
+  decidedAt: string | null;
+  impact: string | null;
+}
+
+export interface ActivityRecord {
+  id: string;
+  jobId: string;
+  type: string;
+  summary: string;
+  evidence: string;
+  nextAction: string;
+  createdAt: string;
+}
+
+export interface ReconciliationConflictRecord {
+  id: string;
+  jobId: string | null;
+  conflictType:
+    | 'DB_STATE_MISMATCH'
+    | 'DB_HUMAN_GATE_MISMATCH'
+    | 'WORKSPACE_MISSING'
+    | 'WORKSPACE_FILE_MISSING'
+    | 'GITHUB_WORKSPACE_MISSING'
+    | 'CONTROL_BOARD_STALE';
+  severity: 'WARNING' | 'BLOCKING';
+  details: string;
+  detectedAt: string;
+  resolvedAt: string | null;
 }
 
 export interface AppSettings {
@@ -241,12 +338,19 @@ export const DEFAULT_SETTINGS: AppSettings = {
 };
 
 export interface AppState {
-  version: 1;
+  version: 2;
   opportunities: OpportunityRecord[];
+  scoreSnapshots: ScoreSnapshot[];
   proposals: ProposalRecord[];
   approvals: ApprovalRecord[];
+  applications: ApplicationRecord[];
   jobs: JobRecord[];
   reviews: ReviewRecord[];
+  deliveries: DeliveryRecord[];
+  economicOutcomes: EconomicOutcomeRecord[];
+  decisions: DecisionRecord[];
+  activities: ActivityRecord[];
+  conflicts: ReconciliationConflictRecord[];
   transitions: Array<{
     id: string;
     entityType: 'OPPORTUNITY' | 'JOB' | 'DELIVERY' | 'APPLICATION';

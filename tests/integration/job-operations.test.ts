@@ -17,6 +17,7 @@ let root = '';
 let previousDataPath: string | undefined;
 let previousJobsRoot: string | undefined;
 let previousBoardPath: string | undefined;
+let previousAppStore: string | undefined;
 
 const sample = (externalId: string, title: string) => ({
   source: 'manual',
@@ -38,6 +39,8 @@ beforeEach(async () => {
   previousDataPath = process.env.DATA_STORE_PATH;
   previousJobsRoot = process.env.JOBS_ROOT;
   previousBoardPath = process.env.CONTROL_BOARD_PATH;
+  previousAppStore = process.env.APP_STORE;
+  process.env.APP_STORE = 'json';
   process.env.DATA_STORE_PATH = path.join(root, 'store.json');
   process.env.JOBS_ROOT = path.join(root, 'jobs');
   process.env.CONTROL_BOARD_PATH = path.join(root, 'CONTROL_BOARD.md');
@@ -53,6 +56,8 @@ afterEach(async () => {
   else process.env.JOBS_ROOT = previousJobsRoot;
   if (previousBoardPath === undefined) delete process.env.CONTROL_BOARD_PATH;
   else process.env.CONTROL_BOARD_PATH = previousBoardPath;
+  if (previousAppStore === undefined) delete process.env.APP_STORE;
+  else process.env.APP_STORE = previousAppStore;
 });
 
 describe('durable job operations', () => {

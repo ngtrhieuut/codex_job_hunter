@@ -533,8 +533,8 @@ function metadataFrom(raw: UnknownRecord): JsonObject {
   return isRecord(value) ? (value as JsonObject) : {};
 }
 
-function hashString(value: string): string {
-  let hash = 2166136261;
+function hashString(value: string, seed = 2166136261): string {
+  let hash = seed >>> 0;
   for (let index = 0; index < value.length; index += 1) {
     hash ^= value.charCodeAt(index);
     hash = Math.imul(hash, 16777619);
@@ -556,7 +556,13 @@ function stableOpportunityId(
   ]
     .join('|')
     .replace(/\s+/g, ' ');
-  return `opp_${hashString(key)}`;
+  const hex = [0, 1, 2, 3]
+    .map((index) => hashString(`${key}|${index}`, 2166136261 ^ Math.imul(index + 1, 0x9e3779b9)))
+    .join('');
+  const characters = hex.split('');
+  characters[12] = '4';
+  characters[16] = ['8', '9', 'a', 'b'][parseInt(characters[16], 16) % 4];
+  return `${characters.slice(0, 8).join('')}-${characters.slice(8, 12).join('')}-${characters.slice(12, 16).join('')}-${characters.slice(16, 20).join('')}-${characters.slice(20).join('')}`;
 }
 
 function normalizeSource(value: unknown, fallback: OpportunitySource): OpportunitySource {
@@ -639,9 +645,12 @@ export function normalizeRawOpportunity(
     description,
     firstValue(record, ['summary', 'normalizedSummary', 'normalized_summary']),
   );
+  const suppliedId = cleanText(options.id ?? firstValue(record, ['id']));
   const id =
-    cleanText(options.id ?? firstValue(record, ['id'])) ||
-    stableOpportunityId(source, externalId, title, description);
+    suppliedId &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(suppliedId)
+      ? suppliedId
+      : stableOpportunityId(source, externalId || suppliedId, title, description);
 
   return {
     id,

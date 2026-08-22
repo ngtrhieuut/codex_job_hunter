@@ -112,6 +112,23 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
                     {task.agentRole || 'unassigned'} · estimate{' '}
                     {task.estimateMinutes ? `${task.estimateMinutes} min` : 'unknown'}
                   </div>
+                  <form
+                    action={`/api/jobs/${job.id}/task`}
+                    method="post"
+                    className="form-actions"
+                    style={{ marginTop: 8 }}
+                  >
+                    <input type="hidden" name="taskId" value={task.id} />
+                    <select name="status" defaultValue={task.status} aria-label="Task status">
+                      {['TODO', 'IN_PROGRESS', 'BLOCKED', 'DONE'].map((value) => (
+                        <option key={value} value={value}>
+                          {value}
+                        </option>
+                      ))}
+                    </select>
+                    <input name="notes" placeholder="Evidence / notes" />
+                    <button>Save task</button>
+                  </form>
                 </li>
               ))}
             </ul>

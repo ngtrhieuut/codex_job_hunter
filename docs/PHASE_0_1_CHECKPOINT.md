@@ -3,22 +3,41 @@
 Date: 2026-08-22
 Repository: `ngtrhieuut/codex_job_hunter`
 Issue: [#1 — Phase 0–1: Build Codex Job Hunter MVP](https://github.com/ngtrhieuut/codex_job_hunter/issues/1)
+Review target: Draft PR #2
+
+## Outcome
+
+The MVP now has an explicit durable-runtime boundary:
+
+- PostgreSQL/Neon is the transactional runtime store when `APP_STORE=postgres`.
+- GitHub is the auditable, recoverable operational ledger for job workspaces and `CONTROL_BOARD.md`.
+- JSON is an explicit development/test fallback only (`APP_STORE=json`); production JSON is blocked unless the emergency override is deliberately set.
+- Missing production `DATABASE_URL`, GitHub credentials, or repository configuration fails fast. The runtime does not silently fall back to local JSON.
+
+This checkpoint addresses the manager review blockers on PR #2: PostgreSQL wiring, full workspace ledger coverage, configurable path consistency, restart durability tests, operational job files, reconciliation, and source-of-truth documentation.
 
 ## Implemented
 
 - Next.js App Router + TypeScript single-owner internal application scaffold.
-- PostgreSQL/Neon-compatible schema and initial migration for the Phase 0–1 logical model.
-- Local-first durable JSON store for zero-credential development and demo/seed data.
-- Manual opportunity creation and validated CSV/JSON import with row/path errors.
-- Provider interface and public GitHub issue adapter with provenance/evidence metadata.
-- Normalization, safe URL handling, categories/technologies/deliverables/acceptance inference, and deterministic dedupe.
+- PostgreSQL/Neon migrations for opportunities, immutable score snapshots, proposals, approvals, applications, jobs, criteria, tasks, QA, delivery, economics, transitions, settings, decision/activity ledgers, and reconciliation conflicts.
+- `PostgresAppStore` with parameterized SQL, transactional state mutations, complete `AppState` reconstruction, and JSON-compatible row mappers.
+- Explicit `APP_STORE=json|postgres` selection in `src/lib/store.ts`; production PostgreSQL mode requires `DATABASE_URL`, `GITHUB_TOKEN`, and `GITHUB_REPOSITORY`.
+- Local JSON store with atomic file replacement and serialized writes for offline development/tests.
+- Manual entry and validated CSV/JSON import with row/path errors.
+- Public GitHub issue discovery adapter with provenance/evidence metadata; no comments, PRs, applications, or client messaging.
+- Normalization, safe URL handling, category/technology/deliverable/acceptance inference, deterministic dedupe, and UUID-compatible stable opportunity IDs.
 - Hard filters with reason codes for prohibited work, scams, unpaid work, circumvention, excluded categories, low budget, physical constraints, and vague low-value scope.
 - Immutable `score_v1` snapshots with documented weights, risk adjustment, economic estimates, human-readable explanation, and revenue/token efficiency.
 - Ranked opportunity inbox, filters/sorting, detail page, risks/assumptions, proposal draft interface, shortlist/reject path, and settings.
 - Human-gated Apply, Price, Contract, Scope, Delivery, Spend, and account-change boundaries. No autonomous external application or client messaging exists.
-- Per-job workspace creation from the repository templates, append-safe activity/decision records, state snapshots, checkpoint/control-board synchronization, WIP limit enforcement, state-conflict detection, and QA/review/delivery queues.
+- Per-job permanent workspaces with `STATE.md`, `BRIEF.md`, `TASKS.md`, `DECISIONS.md`, `ACTIVITY.md`, `REVIEW.md`, `DELIVERY.md`, and artifacts.
+- Operational renderers for tasks, QA/review evidence, and delivery package state; these files are regenerated from durable runtime records rather than left as static templates.
+- Append-only activity and decision history, persistent approval/decision rows, manual application records, QA evidence, delivery records, economic outcomes, and task status updates.
+- GitHub Git Data API checkpoint writer: all seven required workspace files, relevant artifacts, and `CONTROL_BOARD.md` are written through one tree/commit/ref update. A ref race fails rather than silently producing a partial checkpoint.
+- Configurable local paths (`JOBS_ROOT`, `CONTROL_BOARD_PATH`) and repository paths (`GITHUB_JOBS_ROOT`, `GITHUB_CONTROL_BOARD_PATH`) use separate, explicit path helpers.
+- DB ↔ local workspace ↔ GitHub ledger reconciliation, persisted conflict records, dashboard/API visibility, and board regeneration.
 - Seed fixture with 100 input rows, duplicate detection, hard rejects, and scored candidates.
-- CI workflow for format, lint, typecheck, tests, and production build.
+- CI workflow for formatting, lint, typecheck, tests, and a JSON-mode production build.
 - Truthful proposal templates; no portfolio, identity, credentials, client, or experience fabrication.
 
 ## Verification evidence
@@ -28,51 +47,63 @@ Issue: [#1 — Phase 0–1: Build Codex Job Hunter MVP](https://github.com/ngtrh
 | `pnpm format:check` | PASS |
 | `pnpm lint` | PASS |
 | `pnpm typecheck` | PASS |
-| `pnpm test` | PASS — 10 tests (6 domain, 4 integration) |
-| `pnpm build` | PASS — Next.js 15.5.21 |
-| `pnpm db:migrate` without `DATABASE_URL` | PASS — safe local-mode message |
-| `pnpm db:seed` | PASS — 100 rows, 90 duplicates, 3 hard rejects, 7 scored |
-| `pnpm audit --prod` | PASS — No known vulnerabilities found |
-| HTTP smoke (`/`, `/opportunities`) | PASS — HTTP 200 and expected rendered content |
-| `agent-browser` visual runner | NOT AVAILABLE in this runtime; CLI was not on PATH |
+| `pnpm test` | PASS — 25 passed, 1 PostgreSQL live test skipped because `DATABASE_URL` is not configured |
+| `pnpm build` | PASS — Next.js 15.5.21 with explicit local JSON override |
+| `pnpm db:migrate` without `DATABASE_URL` | PASS — safe local-mode message; no remote mutation |
+| `pnpm db:seed` | PASS — 100 imported, 7 scored, 3 hard rejected, 90 duplicates; temp JSON state only |
+| `pnpm audit --prod` | PASS — no known vulnerabilities; npm URL deprecation warning only |
+| Browser visual runner | Not available in this runtime; use HTTP/build checks instead |
 
-The integration tests demonstrate: independent job directories, persistent Apply Gate state and decision history, two-job isolation, WIP limit `3`, and active → internal review → independent QA → Delivery Gate flow.
+The restart suite covers:
+
+1. multiple independent jobs and states after store reinitialization;
+2. pending Apply Gate approval, decision row, and next action;
+3. the three-job `IN_PROGRESS` WIP limit after restart;
+4. QA evidence and review state after restart;
+5. delivery/economic outcome persistence after restart.
+
+The checkpoint suite covers all seven required files, nested artifacts, configurable local-to-repository paths, one Git Data API commit, and failure when a required file is missing. A conditional live PostgreSQL round-trip test runs automatically when `DATABASE_URL` is available and migrations have been applied.
+
+## Source-of-truth and recovery model
+
+PostgreSQL/Neon is authoritative for transactional runtime state and queries. GitHub is the durable, human-readable audit/recovery ledger. Local workspace files are the working materialized view used for review and checkpoint generation. Reconciliation reports conflicts; it does not silently choose DB or file state.
+
+`ACTIVITY.md` and `DECISIONS.md` are append-only. `STATE.md`, `TASKS.md`, `REVIEW.md`, `DELIVERY.md`, and `CONTROL_BOARD.md` are current materialized views regenerated from durable records. A GitHub checkpoint carries the full required workspace set plus artifacts and the board in one logical commit.
 
 ## Current system state
 
 - No real client job has been accepted, started, delivered, or paid.
-- No external proposal/application/client message was sent.
+- No external proposal, application, client message, contract acceptance, spend, or account change was performed.
 - `CONTROL_BOARD.md` intentionally has no managed jobs or pending human decisions in the committed baseline.
 - `pnpm db:seed` is available for a local demo; its `.data/` state is ignored and must not be treated as the GitHub operational ledger.
 
-## Known limitations / unresolved decisions
+## Known limitations
 
-1. The runtime repository is JSON-backed for local-first operation. Wire `PostgresAppStore` before multi-instance deployment or concurrent production users.
-2. GitHub Contents checkpoint sync currently writes changed files individually. Use Git Data API tree/commit batching if atomic multi-file checkpoints become necessary.
-3. The optional owner auth is a lightweight single-owner token/cookie gate, not a multi-user identity system.
+1. This runtime has no `DATABASE_URL`, so the live PostgreSQL round-trip is present but skipped here. The migration runner and production selection are fail-fast; deployment must apply all files in `db/migrations/` before starting.
+2. GitHub checkpointing creates blobs/tree/commit objects before the final ref update. A failed ref update can leave orphan Git objects, but cannot create a partial logical checkpoint in the branch.
+3. The reconciliation endpoint is owner-gated for writes, but the single-owner token/cookie mechanism is not a multi-user identity system.
 4. GitHub issue compensation is evidence/uncertainty only; the adapter cannot prove that an issue is paid.
 5. Score feature inference is deterministic heuristics in this phase. Recalibrate weights and source/category priors after real outcomes; never rewrite historical snapshots.
-6. The visual browser runner was unavailable in this desktop runtime. HTTP smoke, build, and integration verification passed.
+6. The browser visual runner was unavailable in this desktop runtime. Build, lint, typecheck, integration, and HTTP checks remain the applicable evidence.
 
 ## Readiness for the first controlled experiment
 
-The MVP is ready for a small, human-controlled experiment after the owner configures a private deployment/local environment and verifies the GitHub search query. The first target remains one legitimate accepted paid job / first $100, not application volume.
+The MVP is ready for manager re-review and a small, human-controlled experiment after the owner configures PostgreSQL/Neon and GitHub checkpoint credentials. The first target remains one legitimate accepted paid job / first $100, not application volume.
 
-Recommended operating loop:
+Recommended loop:
 
-1. Run `pnpm db:seed` only for a local UI walkthrough; for real work use manual or permitted GitHub discovery.
-2. Inspect score explanation, risks, missing evidence, and expected human/token economics.
-3. Shortlist only objective, compliant, well-scoped opportunities.
-4. Review the persistent Apply Gate and manually submit only approved proposals.
-5. Record responses and Contract/Price decisions; create the job workspace only for selected work.
+1. Run `pnpm db:migrate` against the configured PostgreSQL database.
+2. Set `APP_STORE=postgres`, `DATABASE_URL`, `GITHUB_TOKEN`, `GITHUB_REPOSITORY`, and the intended branch/path settings.
+3. Inspect score explanation, risks, missing evidence, and expected human/token economics.
+4. Shortlist only objective, compliant, well-scoped opportunities.
+5. Review the persistent Apply Gate and manually submit only approved proposals.
 6. Keep `IN_PROGRESS` at or below three jobs; checkpoint after every meaningful milestone.
-7. Require independent QA and Delivery Gate before any owner-controlled client delivery.
-8. Record paid revenue, platform fees, tokens, human minutes, revisions, and acceptance outcome.
+7. Run reconciliation when a restart, failed checkpoint, or manual file edit could have created drift.
+8. Require independent QA and Delivery Gate before any owner-controlled client delivery.
+9. Record paid revenue, platform fees, tokens, human minutes, revisions, and acceptance outcome.
 
-## Recommended Phase 2
+## Deferred scope
 
-- Replace/augment the JSON store with the PostgreSQL repository adapter and migration runner in deployment.
-- Add proposal version editing and auditable Apply/Price approval UI refinements.
-- Add manual application/outcome and economic-outcome forms.
-- Add a single-commit GitHub checkpoint writer and a reconciliation view for database/file conflicts.
-- Add optional permitted email/RSS providers only after policy/rate-limit review; keep external writes human-gated.
+- No new opportunity providers or autonomous external actions.
+- No autonomous proposal submission, client messaging, contract acceptance, spending, or account changes.
+- Proposal version editing and richer manual outcome forms can follow after the persistence boundary is accepted.

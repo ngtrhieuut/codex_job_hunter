@@ -3,17 +3,24 @@ import {
   OPPORTUNITY_STATUSES,
   type AppSettings,
   type AppState,
+  type ActivityRecord,
+  type ApplicationRecord,
   type ApprovalRecord,
+  type DeliveryRecord,
+  type EconomicOutcomeRecord,
   type JobRecord,
+  type JobTask,
   type JobStatus,
   type OpportunityRecord,
   type OpportunityStatus,
   type ProposalRecord,
+  type ReconciliationConflictRecord,
   type ReviewRecord,
   type ScoreSnapshot,
 } from './app-types';
 import { newId, nowIso } from './ids';
 import { loadJsonState, saveJsonState } from './json-store';
+import { PostgresAppStore } from './postgres-store';
 
 export interface OpportunityQuery {
   source?: string;
@@ -31,9 +38,61 @@ export interface DashboardSummary {
   blocked: JobRecord[];
   pipeline: OpportunityRecord[];
   recentlyCompleted: JobRecord[];
+  conflicts: ReconciliationConflictRecord[];
 }
 
-export class JsonAppStore {
+export interface AppStore {
+  getSettings(): Promise<AppSettings>;
+  updateSettings(update: Partial<AppSettings>): Promise<AppSettings>;
+  listOpportunities(query?: OpportunityQuery): Promise<OpportunityRecord[]>;
+  getOpportunity(id: string): Promise<OpportunityRecord | null>;
+  upsertOpportunity(input: OpportunityRecord): Promise<OpportunityRecord>;
+  setOpportunityStatus(
+    id: string,
+    status: OpportunityStatus,
+    reason: string,
+    actor?: 'OWNER' | 'SYSTEM' | 'AGENT',
+  ): Promise<OpportunityRecord>;
+  saveScore(opportunityId: string, score: ScoreSnapshot): Promise<OpportunityRecord>;
+  saveProposal(proposal: ProposalRecord): Promise<ProposalRecord>;
+  getProposal(opportunityId: string): Promise<ProposalRecord | null>;
+  createApproval(
+    approval: Omit<
+      ApprovalRecord,
+      'id' | 'requestedAt' | 'decidedAt' | 'decision' | 'decisionNote' | 'decisionId'
+    >,
+  ): Promise<ApprovalRecord>;
+  listPendingApprovals(): Promise<ApprovalRecord[]>;
+  decideApproval(
+    id: string,
+    decision: 'APPROVED' | 'REJECTED',
+    note: string,
+  ): Promise<ApprovalRecord>;
+  saveApplication(application: ApplicationRecord): Promise<ApplicationRecord>;
+  listJobs(): Promise<JobRecord[]>;
+  getJob(id: string): Promise<JobRecord | null>;
+  createJob(job: JobRecord): Promise<JobRecord>;
+  updateJob(id: string, update: Partial<JobRecord>, reason: string): Promise<JobRecord>;
+  updateJobTask(
+    jobId: string,
+    taskId: string,
+    update: Partial<JobTask>,
+    reason: string,
+  ): Promise<JobRecord>;
+  saveReview(review: ReviewRecord): Promise<ReviewRecord>;
+  saveDelivery(delivery: DeliveryRecord): Promise<DeliveryRecord>;
+  saveEconomicOutcome(outcome: EconomicOutcomeRecord): Promise<EconomicOutcomeRecord>;
+  recordActivity(activity: Omit<ActivityRecord, 'id' | 'createdAt'>): Promise<ActivityRecord>;
+  saveConflict(
+    conflict: Omit<ReconciliationConflictRecord, 'id' | 'detectedAt' | 'resolvedAt'>,
+  ): Promise<ReconciliationConflictRecord>;
+  listConflicts(): Promise<ReconciliationConflictRecord[]>;
+  dashboard(): Promise<DashboardSummary>;
+  metrics(): Promise<Record<string, number>>;
+  rawState(): Promise<AppState>;
+}
+
+export class JsonAppStore implements AppStore {
   private state: AppState | null = null;
   private writeQueue: Promise<unknown> = Promise.resolve();
 
@@ -120,13 +179,20 @@ export class JsonAppStore {
               opportunity.externalId === input.externalId),
       );
       const timestamp = nowIso();
-      const next = { ...input, updatedAt: timestamp };
+      const next = {
+        ...input,
+        scoreHistory: input.scoreHistory || (input.latestScore ? [input.latestScore] : []),
+        updatedAt: timestamp,
+      };
       if (existingIndex === -1) {
         state.opportunities.push(next);
       } else {
         state.opportunities[existingIndex] = {
           ...state.opportunities[existingIndex],
           ...next,
+          scoreHistory: next.scoreHistory.length
+            ? next.scoreHistory
+            : state.opportunities[existingIndex].scoreHistory || [],
           id: state.opportunities[existingIndex].id,
           createdAt: state.opportunities[existingIndex].createdAt,
         };
@@ -171,6 +237,13 @@ export class JsonAppStore {
       if (opportunity.status === 'DISCOVERED' || opportunity.status === 'NORMALIZED') {
         opportunity.status = 'SCORED';
       }
+      opportunity.scoreHistory = [
+        ...(opportunity.scoreHistory || []).filter((item) => item.id !== score.id),
+        structuredClone(score),
+      ];
+      const scoreIndex = state.scoreSnapshots.findIndex((item) => item.id === score.id);
+      if (scoreIndex === -1) state.scoreSnapshots.push(structuredClone(score));
+      else state.scoreSnapshots[scoreIndex] = structuredClone(score);
       opportunity.updatedAt = nowIso();
       return structuredClone(opportunity);
     });
@@ -202,6 +275,7 @@ export class JsonAppStore {
     >,
   ): Promise<ApprovalRecord> {
     return this.write((state) => {
+      const decisionId = newId();
       const result: ApprovalRecord = {
         ...approval,
         id: newId(),
@@ -209,8 +283,30 @@ export class JsonAppStore {
         decisionNote: null,
         requestedAt: nowIso(),
         decidedAt: null,
+        decisionId,
       };
       state.approvals.push(result);
+      const payload = approval.requestedPayload || {};
+      state.decisions.push({
+        id: decisionId,
+        approvalId: result.id,
+        opportunityId: result.opportunityId,
+        jobId: result.jobId,
+        question: String(payload.question || payload.summary || 'Owner decision required.'),
+        recommendation: String(
+          payload.recommendation ||
+            'Review the evidence, risks, scope and commercial consequences before deciding.',
+        ),
+        alternatives: Array.isArray(payload.alternatives)
+          ? payload.alternatives.map(String)
+          : ['Approve', 'Reject'],
+        finalDecision: 'PENDING',
+        ownerDecisionNote: null,
+        decidedBy: 'PENDING',
+        requestedAt: result.requestedAt,
+        decidedAt: null,
+        impact: payload.impact ? String(payload.impact) : null,
+      });
       return structuredClone(result);
     });
   }
@@ -232,7 +328,23 @@ export class JsonAppStore {
       approval.decision = decision;
       approval.decisionNote = note;
       approval.decidedAt = nowIso();
+      const decisionRecord = state.decisions.find((item) => item.approvalId === id);
+      if (decisionRecord) {
+        decisionRecord.finalDecision = decision;
+        decisionRecord.ownerDecisionNote = note;
+        decisionRecord.decidedBy = 'OWNER';
+        decisionRecord.decidedAt = approval.decidedAt;
+      }
       return structuredClone(approval);
+    });
+  }
+
+  async saveApplication(application: ApplicationRecord): Promise<ApplicationRecord> {
+    return this.write((state) => {
+      const index = state.applications.findIndex((item) => item.id === application.id);
+      if (index === -1) state.applications.push(structuredClone(application));
+      else state.applications[index] = structuredClone(application);
+      return structuredClone(application);
     });
   }
 
@@ -277,6 +389,32 @@ export class JsonAppStore {
     });
   }
 
+  async updateJobTask(
+    jobId: string,
+    taskId: string,
+    update: Partial<JobTask>,
+    reason: string,
+  ): Promise<JobRecord> {
+    return this.write((state) => {
+      const job = state.jobs.find((item) => item.id === jobId);
+      if (!job) throw new Error(`Job not found: ${jobId}`);
+      const task = job.tasks.find((item) => item.id === taskId);
+      if (!task) throw new Error(`Task not found: ${taskId}`);
+      Object.assign(task, update);
+      job.updatedAt = nowIso();
+      state.activities.push({
+        id: newId(),
+        jobId,
+        type: 'TASK_CHANGE',
+        summary: `Task "${task.title}" updated: ${reason}`,
+        evidence: `jobs/${job.jobCode}/TASKS.md`,
+        nextAction: job.nextAction,
+        createdAt: nowIso(),
+      });
+      return structuredClone(job);
+    });
+  }
+
   async saveReview(review: ReviewRecord): Promise<ReviewRecord> {
     return this.write((state) => {
       const index = state.reviews.findIndex((item) => item.id === review.id);
@@ -286,6 +424,73 @@ export class JsonAppStore {
       if (job) job.latestReview = structuredClone(review);
       return structuredClone(review);
     });
+  }
+
+  async saveDelivery(delivery: DeliveryRecord): Promise<DeliveryRecord> {
+    return this.write((state) => {
+      const index = state.deliveries.findIndex((item) => item.id === delivery.id);
+      if (index === -1) state.deliveries.push(structuredClone(delivery));
+      else state.deliveries[index] = structuredClone(delivery);
+      const job = state.jobs.find((item) => item.id === delivery.jobId);
+      if (job) job.delivery = structuredClone(delivery);
+      return structuredClone(delivery);
+    });
+  }
+
+  async saveEconomicOutcome(outcome: EconomicOutcomeRecord): Promise<EconomicOutcomeRecord> {
+    return this.write((state) => {
+      const index = state.economicOutcomes.findIndex((item) => item.id === outcome.id);
+      if (index === -1) state.economicOutcomes.push(structuredClone(outcome));
+      else state.economicOutcomes[index] = structuredClone(outcome);
+      const job = state.jobs.find((item) => item.id === outcome.jobId);
+      if (job) {
+        job.economicOutcome = structuredClone(outcome);
+        job.actualRevenueUsd = outcome.grossRevenue;
+        job.updatedAt = nowIso();
+      }
+      return structuredClone(outcome);
+    });
+  }
+
+  async recordActivity(
+    activity: Omit<ActivityRecord, 'id' | 'createdAt'>,
+  ): Promise<ActivityRecord> {
+    return this.write((state) => {
+      const result: ActivityRecord = { ...activity, id: newId(), createdAt: nowIso() };
+      state.activities.push(result);
+      return structuredClone(result);
+    });
+  }
+
+  async saveConflict(
+    conflict: Omit<ReconciliationConflictRecord, 'id' | 'detectedAt' | 'resolvedAt'>,
+  ): Promise<ReconciliationConflictRecord> {
+    return this.write((state) => {
+      const existing = state.conflicts.find(
+        (item) =>
+          item.jobId === conflict.jobId &&
+          item.conflictType === conflict.conflictType &&
+          item.resolvedAt === null,
+      );
+      if (existing) {
+        existing.details = conflict.details;
+        existing.severity = conflict.severity;
+        return structuredClone(existing);
+      }
+      const result: ReconciliationConflictRecord = {
+        ...conflict,
+        id: newId(),
+        detectedAt: nowIso(),
+        resolvedAt: null,
+      };
+      state.conflicts.push(result);
+      return structuredClone(result);
+    });
+  }
+
+  async listConflicts(): Promise<ReconciliationConflictRecord[]> {
+    const state = await this.getState();
+    return structuredClone(state.conflicts.filter((item) => item.resolvedAt === null));
   }
 
   async dashboard(): Promise<DashboardSummary> {
@@ -324,6 +529,7 @@ export class JsonAppStore {
       blocked,
       pipeline,
       recentlyCompleted,
+      conflicts: state.conflicts.filter((item) => item.resolvedAt === null),
     });
   }
 
@@ -385,14 +591,59 @@ export class JsonAppStore {
   }
 }
 
-let singleton: JsonAppStore | null = null;
+let singleton: AppStore | null = null;
 
-export function getStore(): JsonAppStore {
-  singleton ??= new JsonAppStore();
+function runtimeStoreMode(): 'json' | 'postgres' {
+  const configured = (process.env.APP_STORE || '').trim().toLowerCase();
+  if (configured && configured !== 'json' && configured !== 'postgres') {
+    throw new Error(
+      `Unsupported APP_STORE=${configured}; use APP_STORE=json or APP_STORE=postgres.`,
+    );
+  }
+  if (configured === 'postgres') return 'postgres';
+  if (configured === 'json') {
+    if (
+      process.env.NODE_ENV === 'production' &&
+      process.env.ALLOW_LOCAL_JSON_PRODUCTION !== 'true'
+    ) {
+      throw new Error(
+        'APP_STORE=json is blocked in production. Configure APP_STORE=postgres with DATABASE_URL, or explicitly set ALLOW_LOCAL_JSON_PRODUCTION=true for a non-durable emergency mode.',
+      );
+    }
+    return 'json';
+  }
+  if (process.env.NODE_ENV === 'production') return 'postgres';
+  return 'json';
+}
+
+export function getStore(): AppStore {
+  if (!singleton) {
+    const mode = runtimeStoreMode();
+    if (mode === 'postgres') {
+      if (!process.env.DATABASE_URL) {
+        throw new Error(
+          'Durable runtime store unavailable: APP_STORE=postgres requires DATABASE_URL. The application will not fall back to local JSON.',
+        );
+      }
+      if (
+        process.env.NODE_ENV === 'production' &&
+        (!process.env.GITHUB_TOKEN || !process.env.GITHUB_REPOSITORY)
+      ) {
+        throw new Error(
+          'Durable operational ledger unavailable: production PostgreSQL mode requires GITHUB_TOKEN and GITHUB_REPOSITORY for GitHub checkpointing.',
+        );
+      }
+      singleton = new PostgresAppStore(process.env.DATABASE_URL);
+    } else {
+      singleton = new JsonAppStore();
+    }
+  }
   return singleton;
 }
 
 export function resetStoreForTests(): void {
+  const current = singleton as (AppStore & { close?: () => Promise<void> }) | null;
+  if (current?.close) void current.close();
   singleton = null;
 }
 

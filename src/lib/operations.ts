@@ -10,15 +10,30 @@ import type {
   OpportunityLifecycleState,
   RawOpportunityRecord,
 } from '@/src/domain/types';
-import type { ApprovalType, JobRecord, OpportunityRecord, ReviewRecord } from './app-types';
+import type {
+  ApprovalType,
+  ApprovalRecord,
+  ApplicationRecord,
+  DeliveryRecord,
+  EconomicOutcomeRecord,
+  JobRecord,
+  OpportunityRecord,
+  ReviewRecord,
+} from './app-types';
 import { newId, nowIso, slugify } from './ids';
 import {
   appendJobActivity,
   appendJobDecision,
-  checkpointToGitHub,
+  appendJobDecisionResolution,
+  checkpointFilesToGitHub,
   createJobWorkspace,
   detectStateConflict,
+  githubControlBoardPath,
+  readWorkspaceCheckpointFiles,
+  repositoryWorkspacePath,
   syncControlBoard,
+  syncJobOperationalFiles,
+  controlBoardFilePath,
   updateJobStateFile,
 } from './job-workspace';
 import { getStore } from './store';
@@ -53,26 +68,73 @@ function riskFromOpportunity(opportunity: OpportunityRecord): JobRecord['risk'] 
   return 'LOW';
 }
 
+function validateApprovalOutcome(
+  approval: ApprovalRecord,
+  decision: 'APPROVED' | 'REJECTED',
+  job: JobRecord,
+  opportunity: OpportunityRecord,
+): void {
+  if (approval.approvalType === 'APPLY') {
+    if (decision === 'APPROVED') {
+      ensureTransition('job', job.status, 'APPLY_APPROVED', 'APPLY');
+      ensureTransition('opportunity', opportunity.status, 'APPROVED_TO_APPLY', 'APPLY');
+    } else {
+      ensureTransition('job', job.status, 'SHORTLISTED');
+      ensureTransition('opportunity', opportunity.status, 'SHORTLISTED');
+    }
+  } else if (approval.approvalType === 'PRICE') {
+    if (decision === 'APPROVED') ensureTransition('job', job.status, 'NEGOTIATING', 'PRICE');
+    else {
+      ensureTransition('job', job.status, 'REJECTED');
+      ensureTransition('opportunity', opportunity.status, 'CANCELLED');
+    }
+  } else if (approval.approvalType === 'CONTRACT') {
+    if (decision === 'APPROVED') {
+      ensureTransition('job', job.status, 'WON', 'CONTRACT');
+      ensureTransition('job', 'WON', 'PLANNING');
+      ensureTransition('opportunity', opportunity.status, 'ACTIVE', 'CONTRACT');
+    } else {
+      ensureTransition('job', job.status, 'CLOSED_LOST');
+      ensureTransition('opportunity', opportunity.status, 'CANCELLED');
+    }
+  } else if (approval.approvalType === 'DELIVERY' && decision === 'APPROVED') {
+    ensureTransition('job', job.status, 'DELIVERED', 'DELIVERY');
+    ensureTransition('opportunity', opportunity.status, 'DELIVERED', 'DELIVERY');
+  } else if (approval.approvalType === 'DELIVERY') {
+    ensureTransition('job', job.status, 'CHANGES_REQUESTED');
+  }
+}
+
 async function checkpoint(job: JobRecord, event: string, type = 'STATE_CHANGE'): Promise<void> {
   const store = getStore();
   const opportunity = await store.getOpportunity(job.opportunityId);
   if (!opportunity) throw new Error(`Opportunity not found for ${job.jobCode}`);
   await updateJobStateFile(job, opportunity, event);
-  await appendJobActivity(job.jobCode, type, event, `jobs/${job.jobCode}/STATE.md`, job.nextAction);
-  await syncControlBoard(await store.dashboard());
+  await syncJobOperationalFiles(job, opportunity);
+  await appendJobActivity(
+    job.jobCode,
+    type,
+    event,
+    repositoryWorkspacePath(job.jobCode, 'STATE.md'),
+    job.nextAction,
+  );
+  await store.recordActivity({
+    jobId: job.id,
+    type,
+    summary: event,
+    evidence: repositoryWorkspacePath(job.jobCode, 'STATE.md'),
+    nextAction: job.nextAction,
+  });
+  const dashboard = await store.dashboard();
+  await syncControlBoard(dashboard);
   if (process.env.GITHUB_TOKEN && process.env.GITHUB_REPOSITORY) {
-    const statePath = `jobs/${job.jobCode}/STATE.md`;
-    const stateContent = await readFile(statePath, 'utf8');
-    await checkpointToGitHub(statePath, stateContent, `checkpoint(${job.jobCode}): ${event}`);
-    const activityPath = `jobs/${job.jobCode}/ACTIVITY.md`;
-    const activityContent = await readFile(activityPath, 'utf8');
-    await checkpointToGitHub(activityPath, activityContent, `checkpoint(${job.jobCode}): activity`);
-    const boardContent = await readFile('CONTROL_BOARD.md', 'utf8');
-    await checkpointToGitHub(
-      'CONTROL_BOARD.md',
-      boardContent,
-      `checkpoint(${job.jobCode}): control board`,
-    );
+    const files = await readWorkspaceCheckpointFiles(job.jobCode);
+    files.push({
+      localPath: controlBoardFilePath(),
+      repositoryPath: githubControlBoardPath(),
+      content: await readFile(controlBoardFilePath(), 'utf8'),
+    });
+    await checkpointFilesToGitHub(files, `checkpoint(${job.jobCode}): ${event}`);
   }
 }
 
@@ -157,6 +219,8 @@ async function findOrCreateManagedJob(opportunity: OpportunityRecord): Promise<J
       },
     ],
     latestReview: null,
+    delivery: null,
+    economicOutcome: null,
   };
   await store.createJob(job);
   await createJobWorkspace(
@@ -283,6 +347,22 @@ export async function recordManualApplication(opportunityId: string): Promise<vo
     'APPLIED',
     'Owner recorded a manual application; system did not submit externally.',
   );
+  const proposal = await store.getProposal(opportunityId);
+  const application: ApplicationRecord = {
+    id: newId(),
+    opportunityId,
+    proposalId: proposal?.id || null,
+    submittedAt: nowIso(),
+    submittedVia: 'MANUAL',
+    actualBid: proposal?.recommendedBid || null,
+    currency: opportunity.currency,
+    status: 'SUBMITTED',
+    externalReference: null,
+    notes: 'Recorded by owner; Codex Job Hunter did not submit externally.',
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+  };
+  await store.saveApplication(application);
   const updated = await store.updateJob(
     job.id,
     {
@@ -376,18 +456,24 @@ export async function decideApproval(
     (approval) => approval.id === approvalId,
   );
   if (!pending) throw new Error('Pending approval not found.');
-  const approval = await store.decideApproval(approvalId, decision, note);
-  if (!pending.jobId) return;
+  if (!pending.jobId) {
+    await store.decideApproval(approvalId, decision, note);
+    return;
+  }
   const job = await store.getJob(pending.jobId);
   if (!job) throw new Error('Approval job not found.');
   const opportunity = pending.opportunityId
     ? await store.getOpportunity(pending.opportunityId)
     : null;
   if (!opportunity) throw new Error('Approval opportunity not found.');
+  // Validate the complete state-machine outcome before recording the owner
+  // decision. This prevents a gate from becoming final when the subsequent
+  // job/opportunity transition would be invalid.
+  validateApprovalOutcome(pending, decision, job, opportunity);
+  await store.decideApproval(approvalId, decision, note);
+  await appendJobDecisionResolution(job.jobCode, decision, note);
   if (pending.approvalType === 'APPLY') {
     if (decision === 'APPROVED') {
-      ensureTransition('job', job.status, 'APPLY_APPROVED', 'APPLY');
-      ensureTransition('opportunity', opportunity.status, 'APPROVED_TO_APPLY', 'APPLY');
       await store.setOpportunityStatus(
         opportunity.id,
         'APPROVED_TO_APPLY',
@@ -408,8 +494,6 @@ export async function decideApproval(
         'Apply Gate approved. No external application was sent by the system.',
       );
     } else {
-      ensureTransition('job', job.status, 'SHORTLISTED');
-      ensureTransition('opportunity', opportunity.status, 'SHORTLISTED');
       await store.setOpportunityStatus(
         opportunity.id,
         'SHORTLISTED',
@@ -429,7 +513,6 @@ export async function decideApproval(
     }
   } else if (pending.approvalType === 'PRICE') {
     if (decision === 'APPROVED') {
-      ensureTransition('job', job.status, 'NEGOTIATING', 'PRICE');
       const updated = await store.updateJob(
         job.id,
         {
@@ -451,7 +534,6 @@ export async function decideApproval(
       });
       await checkpoint(updated, 'Price Gate approved; Contract Gate requested.', 'NEEDS_DECISION');
     } else {
-      ensureTransition('job', job.status, 'REJECTED');
       await store.setOpportunityStatus(
         opportunity.id,
         'CANCELLED',
@@ -472,9 +554,6 @@ export async function decideApproval(
     }
   } else if (pending.approvalType === 'CONTRACT') {
     if (decision === 'APPROVED') {
-      ensureTransition('job', job.status, 'WON', 'CONTRACT');
-      ensureTransition('job', 'WON', 'PLANNING');
-      ensureTransition('opportunity', opportunity.status, 'ACTIVE', 'CONTRACT');
       await store.setOpportunityStatus(
         opportunity.id,
         'ACTIVE',
@@ -501,7 +580,6 @@ export async function decideApproval(
       );
       await checkpoint(updated, 'Contract Gate approved; job activated in PLANNING.');
     } else {
-      ensureTransition('job', job.status, 'CLOSED_LOST');
       await store.setOpportunityStatus(
         opportunity.id,
         'CANCELLED',
@@ -522,13 +600,18 @@ export async function decideApproval(
     }
   } else if (pending.approvalType === 'DELIVERY') {
     if (decision === 'APPROVED') {
-      ensureTransition('job', job.status, 'DELIVERED', 'DELIVERY');
-      ensureTransition('opportunity', opportunity.status, 'DELIVERED', 'DELIVERY');
       await store.setOpportunityStatus(
         opportunity.id,
         'DELIVERED',
         'Delivery Gate approved; external sending remains owner-controlled.',
       );
+      if (job.delivery) {
+        await store.saveDelivery({
+          ...job.delivery,
+          status: 'APPROVED',
+          finalApprovalStatus: 'APPROVED',
+        });
+      }
       const updated = await store.updateJob(
         job.id,
         {
@@ -541,7 +624,6 @@ export async function decideApproval(
       );
       await checkpoint(updated, 'Delivery package approved for owner-controlled delivery.');
     } else {
-      ensureTransition('job', job.status, 'CHANGES_REQUESTED');
       const updated = await store.updateJob(
         job.id,
         {
@@ -555,7 +637,6 @@ export async function decideApproval(
       await checkpoint(updated, 'Delivery Gate rejected; changes requested.');
     }
   }
-  void approval;
 }
 
 export async function startJob(jobId: string): Promise<void> {
@@ -583,6 +664,30 @@ export async function startJob(jobId: string): Promise<void> {
     'Job entered active execution.',
   );
   await checkpoint(updated, 'Job entered IN_PROGRESS within the configured WIP limit.');
+}
+
+export async function updateTaskStatus(
+  jobId: string,
+  taskId: string,
+  status: JobRecord['tasks'][number]['status'],
+  notes?: string,
+): Promise<void> {
+  const store = getStore();
+  const job = await store.getJob(jobId);
+  if (!job) throw new Error('Job not found.');
+  const task = job.tasks.find((item) => item.id === taskId);
+  if (!task) throw new Error('Task not found.');
+  const updated = await store.updateJobTask(
+    jobId,
+    taskId,
+    {
+      status,
+      blockedReason:
+        status === 'BLOCKED' ? notes || task.blockedReason || 'Blocked; review required.' : null,
+    },
+    notes || `Task status changed to ${status}.`,
+  );
+  await checkpoint(updated, `Task "${task.title}" moved to ${status}.`);
 }
 
 export async function markReadyForReview(jobId: string): Promise<void> {
@@ -640,6 +745,9 @@ export async function saveQaResult(
     })),
     tests,
     securityFindings: [],
+    reviewer: 'QA Agent',
+    findings: passed ? [] : [summary],
+    requiredChanges: passed ? [] : [summary],
     createdAt: nowIso(),
   };
   await store.saveReview(review);
@@ -691,7 +799,7 @@ export async function requestDeliveryApproval(jobId: string): Promise<void> {
   const job = await store.getJob(jobId);
   if (!job) throw new Error('Job not found.');
   ensureTransition('job', job.status, 'REQUIRES_DELIVERY_APPROVAL');
-  await store.updateJob(
+  const updatedJob = await store.updateJob(
     job.id,
     {
       status: 'REQUIRES_DELIVERY_APPROVAL',
@@ -701,6 +809,25 @@ export async function requestDeliveryApproval(jobId: string): Promise<void> {
     },
     'Delivery Gate requested.',
   );
+  const opportunity = await store.getOpportunity(job.opportunityId);
+  if (!opportunity) throw new Error('Opportunity not found.');
+  const existingDelivery = updatedJob.delivery;
+  const delivery: DeliveryRecord = existingDelivery || {
+    id: newId(),
+    jobId: job.id,
+    version: 1,
+    summary: `Delivery package for ${job.title}`,
+    instructions: 'Owner reviews the package, then sends it manually only after approval.',
+    testsPerformed: updatedJob.latestReview?.tests || [],
+    limitations: opportunity.missingInformation,
+    artifacts: [],
+    deliveryMessageDraft: `Draft only: deliver the agreed scope for "${job.title}" after owner approval.`,
+    finalApprovalStatus: 'PENDING',
+    status: 'DRAFT',
+    createdAt: nowIso(),
+    deliveredAt: null,
+  };
+  await store.saveDelivery(delivery);
   await store.createApproval({
     opportunityId: job.opportunityId,
     jobId: job.id,
@@ -768,5 +895,27 @@ export async function markPaid(jobId: string, revenue: number): Promise<void> {
     },
     'Payment recorded.',
   );
-  await checkpoint(updated, 'Payment recorded; revenue is preserved for learning.');
+  const existingOutcome = updated.economicOutcome;
+  await store.saveEconomicOutcome({
+    id: existingOutcome?.id || newId(),
+    jobId,
+    grossRevenue: Math.max(0, revenue),
+    platformFees: existingOutcome?.platformFees || 0,
+    externalCosts: existingOutcome?.externalCosts || 0,
+    netRevenue: Math.max(
+      0,
+      revenue - (existingOutcome?.platformFees || 0) - (existingOutcome?.externalCosts || 0),
+    ),
+    tokenCount: existingOutcome?.tokenCount || null,
+    estimatedAiMinutes: existingOutcome?.estimatedAiMinutes || null,
+    actualHumanMinutes: existingOutcome?.actualHumanMinutes || null,
+    revisionsCount: existingOutcome?.revisionsCount || 0,
+    paymentStatus: 'PAID',
+    paidAt: nowIso(),
+    createdAt: existingOutcome?.createdAt || nowIso(),
+    updatedAt: nowIso(),
+  });
+  const checkpointJob = await store.getJob(jobId);
+  if (!checkpointJob) throw new Error('Job not found after payment outcome update.');
+  await checkpoint(checkpointJob, 'Payment recorded; revenue is preserved for learning.');
 }

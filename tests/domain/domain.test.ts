@@ -119,6 +119,7 @@ test('normalization keeps safe URLs, GitHub identity, categories, and missing in
 
   assert.equal(normalized.externalId, 'owner/repo#42');
   assert.equal(normalized.source, 'github');
+  assert.match(normalized.id, /^[0-9a-f-]{36}$/i);
   assert.equal(normalized.category, 'python_bugfix');
   assert.ok(normalized.technologies.includes('Python'));
   assert.ok(normalized.acceptanceCriteria.length > 0);

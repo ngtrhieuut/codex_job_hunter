@@ -120,18 +120,18 @@ Prerequisites: Node.js 20+ and pnpm 10+.
 ```powershell
 pnpm install
 Copy-Item .env.example .env
-pnpm db:migrate       # applies PostgreSQL schema only when DATABASE_URL is configured
+pnpm db:migrate       # applies all PostgreSQL migrations when DATABASE_URL is configured
 pnpm db:seed          # optional: 100-row local demo fixture
 pnpm dev
 ```
 
-Open `http://localhost:3000`. Without a database credential, the app uses the durable ignored file `.data/store.json`; this keeps the MVP usable locally. Set `APP_OWNER_TOKEN` before exposing it beyond a private local server. Set `GITHUB_TOKEN` only through environment configuration when higher-rate public discovery or GitHub checkpoint sync is needed.
+Open `http://localhost:3000`. Development/tests use `APP_STORE=json` and the ignored `.data/store.json`. Deployment must set `APP_STORE=postgres` and `DATABASE_URL`; the runtime fails clearly instead of falling back to local JSON. Set `APP_OWNER_TOKEN` before exposing it beyond a private local server. Set `GITHUB_TOKEN`, `GITHUB_REPOSITORY`, `GITHUB_BRANCH`, `GITHUB_JOBS_ROOT`, and `GITHUB_CONTROL_BOARD_PATH` for durable operational checkpoints.
 
 ### Implemented workflow
 
 Manual entry and CSV/JSON import pass through validation, normalization, deduplication, hard filters, and deterministic `score_v1`. The inbox supports ranked sorting/filtering and detail pages explain score components, risks, assumptions, missing information, economic estimates, and truthful proposal drafts. The GitHub provider reads public issues only and performs no comments, PRs, applications, or client messaging.
 
-Shortlisting creates an isolated `jobs/JOB-YYYYMMDD-NNN-short-slug/` workspace from `jobs/_template/`. Apply, price, contract, scope, delivery, spending, and external account actions create persistent human-gated approvals. `STATE.md`, `ACTIVITY.md`, `DECISIONS.md`, and `CONTROL_BOARD.md` are refreshed at meaningful checkpoints; optional GitHub Contents sync can persist these files remotely.
+Shortlisting creates an isolated `jobs/JOB-YYYYMMDD-NNN-short-slug/` workspace from `jobs/_template/`. Apply, price, contract, scope, delivery, spending, and external account actions create persistent human-gated approvals. `STATE.md`, `BRIEF.md`, `TASKS.md`, `DECISIONS.md`, `ACTIVITY.md`, `REVIEW.md`, `DELIVERY.md`, artifacts, and `CONTROL_BOARD.md` are refreshed/checkpointed together. GitHub Data API tree/commit writes one logical multi-file checkpoint commit. PostgreSQL is the transactional source for runtime queries; GitHub remains the readable audit/recovery ledger.
 
 ### Verification and architecture notes
 
@@ -146,4 +146,4 @@ pnpm build
 pnpm audit --prod
 ```
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for boundaries and deliberate local-first deviations, and [docs/PHASE_0_1_CHECKPOINT.md](docs/PHASE_0_1_CHECKPOINT.md) for the implementation evidence, limitations, current state, and first-experiment protocol.
+Use `POST /api/reconciliation` (owner-authenticated) to persist DB ↔ workspace ↔ GitHub conflicts for review; `GET` returns the current check. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the persistence hierarchy and [docs/PHASE_0_1_CHECKPOINT.md](docs/PHASE_0_1_CHECKPOINT.md) for verification evidence, limitations, current state, and first-experiment protocol.

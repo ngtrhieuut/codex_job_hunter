@@ -222,6 +222,7 @@ function domainToApp(
     createdAt: timestamp,
     updatedAt: timestamp,
     latestScore: null,
+    scoreHistory: [],
   };
 }
 
@@ -346,7 +347,12 @@ export async function ingestRawRecords(
         'REJECTED_HARD_FILTER',
         `DUPLICATE:${decision.method} — ${decision.reason}`,
       );
-      duplicate.id = `${opportunity.id}-duplicate-${decision.duplicateOf}`;
+      duplicate.id = newId();
+      duplicate.rawMetadata = {
+        ...duplicate.rawMetadata,
+        duplicateExternalId: opportunity.externalId,
+      };
+      duplicate.externalId = null;
       duplicate.duplicateOf = decision.duplicateOf;
       await store.upsertOpportunity(duplicate);
       records.push(duplicate);

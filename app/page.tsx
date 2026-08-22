@@ -104,6 +104,26 @@ export default async function DashboardPage() {
             workspace.
           </p>
         </section>
+        <section className="panel">
+          <div className="panel-header">
+            <h2>Reconciliation</h2>
+            <span className={`badge ${summary.conflicts.length ? 'danger' : 'good'}`}>
+              {summary.conflicts.length} open
+            </span>
+          </div>
+          {summary.conflicts.length ? (
+            <ul className="list">
+              {summary.conflicts.slice(0, 5).map((conflict) => (
+                <li key={conflict.id}>
+                  <strong>{conflict.conflictType}</strong>
+                  <div className="small">{conflict.details}</div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="empty">No unresolved DB ↔ workspace ↔ GitHub conflicts.</p>
+          )}
+        </section>
       </div>
       <section className="panel" style={{ marginTop: 18 }}>
         <div className="panel-header">
